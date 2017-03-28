@@ -1,0 +1,378 @@
+<html xmlns:behave_yaself>
+<head>
+<title>Data Visualization</title>
+<script type="text/javascript">
+
+VizTime = 3;
+/*
+Database structure
+1. IDs
+2. directoryNames[numOfDirectories]
+3. level[numOfDirectories]
+4. Parent[numOfDirectories]
+5. subdir_size[numOfDirectories]
+6. changeOverTime[numOfDirectories][numOfTimes]
+7. LevelTable
+8. LeafNodes
+// Add dir Structures[#dir][numOfTimes==8]
+9. Variances
+
+*/
+isSet = false;
+
+function handleFileSelect(evt) {
+	var files = evt.target.files; // FileList object
+
+	// files is a FileList of File objects. List some properties.
+	var output = [];
+	for (var i = 0, f; f = files[i]; i++) {
+		output.push('<li><strong>', f.name, '</strong> (', f.type || 'n/a', ') - ',
+		f.size, ' bytes, last modified: ',
+		f.lastModifiedDate.toLocaleDateString(), '</li>');
+	}
+	document.getElementById('list').innerHTML = '<ul>' + output.join('') + '</ul>';
+}
+
+document.getElementById('files').addEventListener('change', handleFileSelect, false);
+
+function downloadEnd(e) {
+	numOfLevels = 20; // const variable
+	numOfTokens = 10;  // const variable
+	t = "testmsg";
+	var lines = e.split('\n');
+	if( lines[lines.length - 1] == "" )
+		lines.pop();
+	var lineLength = lines.length;
+	for( i = 0 ; i < lineLength ; i ++ )
+	{
+		var tmp = lines[i].charCodeAt(lines[i].length -1);
+		if( tmp == 10 || tmp == 13 )
+			lines[i] = lines[i].slice(0, -1);
+	}
+
+	// Here put a for loop for lines.length --> save like 'var tmp2[i] = tmp[i].split('t')'
+	numOfDirectories = lines.length; // global variable.
+	var tokens = new Array(numOfDirectories);
+	for( i = 0 ; i < numOfDirectories ; i++ )
+	{
+		tokens[i] = lines[i].split('\t'); // My idea is that tokens becomes a 2 dimensional array.
+	}
+
+	//s=e.split(/[\s,]+/); // wrong regexp.
+	var numOfTimes = numOfTokens - 2;
+	level = new Array(numOfDirectories); // (global) level - array[directory #] ==> level variable contains each directory's level in the tree. The array.length = number of directories in database.
+	changeOverTime = new Array(numOfDirectories); // (global) changeOverTime - array[directory #][10] 
+													// changeOverTime ==> It contains each directory's change history over time.
+	directoryNames = new Array(numOfDirectories);
+	IDs = new Array(numOfDirectories);
+
+	// initialize changeOverTime and IDs array
+	for(var i = 0 ; i < numOfDirectories ; i++ ) 
+	{	// changeOverTime becomes a two-dimensional array.
+		changeOverTime[i] = new Array(numOfTimes);
+		for(var j = 0 ; j < numOfTimes ; j++)
+		{
+			changeOverTime[i][j] = -5;
+		}
+		IDs[i] = i;
+	}
+	
+	///////////////////////////////////////////
+	//  Database  set up					///
+	///////////////////////////////////////////
+	for( i = 0 ; i < numOfDirectories ; i ++ )
+	{
+		for( j = 0 ; j < numOfTokens ; j++ )
+		{
+			t += tokens[i][j];
+			t += '  ';
+		}
+		var entryNum = i; // entryNum contains a unique ID for each directory for each loop.
+		directoryNames[entryNum] = tokens[i][0]; // store directory name.
+		//level = s[i + 1]; // +1 ==> tree level
+		level[entryNum] = tokens[i][1];		// set the tree level for each directory in the loop.
+		for( var k = 0 ; k < numOfTimes ; k++ )
+		{
+			//changeOverTime[entryNum][k] = tokens[i][k + 2];	// save changes over time. It must repeat the number of the times.
+			if( tokens[i][k + 2] == "true" )
+			{
+				changeOverTime[entryNum][k] = 1;
+			}
+			else if( tokens[i][k + 2] == "false" )
+			{
+				changeOverTime[entryNum][k] = -1;
+			}
+			else // undefined
+			{
+				changeOverTime[entryNum][k] = 0;
+			}
+}
+
+		//changeOverTime[0] = s[i + 2];// +2 ==> status at time = 0
+		t += "\n\n";
+	}
+	//Now we have changeOverTime. Then we want to get the variance for changeOverTime.
+	Variances = new Array(numOfDirectories);
+	for( i = 0 ; i < numOfDirectories ; i++ )
+	{
+		var avg = 0;
+		for( j = 0 ; j < numOfTimes ; j++ )
+		{
+			avg += changeOverTime[i][j];
+		}
+		avg /= numOfTimes ;
+		var variance = 0;
+		for( j = 0 ; j < numOfTimes ; j++ )
+		{
+			variance += Math.pow( changeOverTime[i][j] - avg, 2 );
+		}
+		Variances[i] = variance / numOfTimes;
+	}
+
+	var ParentPerLevel = new Array(numOfLevels);
+	Parents = new Array(numOfDirectories);
+	for( i = 0 ; i < numOfLevels ; i++ ) ParentPerLevel[i] = -2;
+	for( i = 0 ; i < numOfDirectories ; i++ )
+	{
+		// save its parent for each level.
+		ParentPerLevel[ level[i] ] = IDs[i];
+		// Now we have parent tree, we can save parents for each directory.
+		if( level[i] > 0 ) // For the highest level(root level), save the default.
+			Parents[i] = ParentPerLevel[ level[i] - 1 ]; // normal node
+		else
+			Parents[i] = -1; // root has no parent
+	}
+	// Now Parents have the parent node IDs.
+	
+	// Create LevelTable[numOfLevels] - 20 is supposed to be the maximum level. 
+	// LevelTable is a global variable.
+	LevelTable = new Array(numOfLevels);
+	for( i = 0 ; i < numOfLevels ; i++ )
+	{
+		LevelTable[i] = new Array();
+	}
+	for( i = 0 ; i < numOfDirectories ; i++ )
+	{
+		LevelTable[ level[i] ].push( IDs[i] );
+	}
+	// Now LevelTable is set up. LevelTable[numOfLevels][some lengths].
+
+	/* Task:
+	//1. Check LevelTable is correctly set. ==> I used algorithm to check and it works. Thus I can be sure that LevelTable is correctly set.
+	tmpstr = new Array( 20 );
+	for( i = 0 ; i < 20 ; i++)
+	{
+		tmpstr[i] = "";
+		
+		for( var j = 0 ; j < LevelTable[i].length ; j++)
+		{
+			tmpstr[i] += level[LevelTable[i][j]];
+			tmpstr[i] += ", ";
+		}
+		tmpstr[i] += "\n\n";
+	}*/
+	
+	
+	// 2. algorithm for subdir_num
+	/*
+	for i = 0 ; i < numOfLevels ; i++
+		if ( LevelTable[ i ].length != 0 )
+			// it's NOT empty. Let's save it.
+			highest_level = i;*/
+	var highest_level = -1;
+	for( i = 0 ; i < numOfLevels ; i++ )
+	{
+		if( LevelTable[i].length != 0 )
+		{
+			// If NOT empty, save it. so that at the end of the for loop, it has the highest level.
+			highest_level = i;
+		}
+	}
+
+	// at this point, we know the highest level of the database dir structure.
+	// I need to know all the leaf nodes first.
+	// Compute Leaf Nodes.
+	LeafNodes = new Array();
+	var leaf_level = -1;
+	for( i = 0 ; i < numOfDirectories - 1 ; i++ )
+	{
+		if( level[i] >= level[i+1] )
+		{
+			// i node should be a leaf node.
+			LeafNodes.push(IDs[i]);
+		}
+//		else if( level[i] > level[i+1] )
+//		{
+			// i node mustn't be a leaf node.
+//		}
+	}
+	/* Last node is not checked for LeafNode, so add the last node.(The last node must be a leaf node anyway. no need to check.)
+	When level goes down at last or stays the same, the last node is a leaf node and the prev node before the last node is
+	also a leaf node.(but the last node == leaf node is NOT detected by the for loop above.
+	When level goes up at last, the last node is a leaf node. If you do not count the last node as a leaf node, some nodes will have
+	no leaf node in the database, which is nonsensical. */
+	LeafNodes.push(IDs[numOfDirectories-1]); // the last node = a leaf node.
+	
+/*
+	// Now I have set LeafNodes correctly. I can go on to the next for loop now.
+	for i = 0 ; i < LevelTable[lowest Level] ==> Wrong! Not the lowest level, but for all the leaf nodes. so I need to know what are leaf nodes first.
+		set subdir_# = 1; (for lowest level nodes)
+	for i = lowest level ; i > -1 ; i--
+		add up subdir_# to its parent; // parent level = i - 1
+	*/
+	
+	// For all leaf nodes, set it to 0.
+	subdir_size = new Array(numOfDirectories);
+	for( i = 0 ; i < numOfDirectories ; i++ )
+	{
+		subdir_size[i] = 0;
+	}
+	for( i = 0 ; i < LeafNodes.length ; i++ )
+	{
+		subdir_size[ LeafNodes[i] ] = 1;
+	}
+	for( i = highest_level ; i > -1 ; i-- )
+	{
+		var len = LevelTable[i].length;
+		for( j = 0 ; j < len ; j++ )
+		{
+			// Basically, from lowest level, add up all children's subdir_size to their parents.
+			var indexID = LevelTable[i][j];
+// something is not right. subdir_size[i] can be 0. there is no 0.
+			var parentID = Parents[ indexID ];
+			// Add up the current looping level's nodes' subdir_size to their parents' subdir_size.
+			subdir_size[ parentID ] += subdir_size[indexID];
+		}
+		var parentI = i - 1;
+		if( parentI > -1 )
+		{
+			var parentLen = LevelTable[i - 1].length;
+			for( j = 0 ; j < parentLen ; j++ )
+			{
+				if( IsContained(LevelTable[parentI][j], LeafNodes, LeafNodes.length) == false )
+				{
+					if( subdir_size[ LevelTable[parentI][j] ] != 0 )
+						subdir_size[ LevelTable[parentI][j] ]++;
+				}
+			}
+		}
+	}
+	// Now Subdir_size should be set up. check the result.
+	isSet = true;
+	/*tmpstrha = LevelTable[0].toString();
+	tmpstrha += "\n\n\n";
+	j = 1;
+	for( var i = 0 ; i < LevelTable[j].length ; i++ )
+	{
+		var id = LevelTable[j][i];
+		tmpstrha +=  id + "|" + Parents[id]  + ",";
+		//alert(directoryNames[id] + "||" + directoryNames[ Parents[id] ] + "||" + subdir_size[id] );
+//		data.addRows([   [ directoryNames[id], directoryNames[ Parents[id] ] , subdir_size[id] ]  ]);
+	}*/
+	
+	
+	document.all.download.value = Variances;
+	drawChart();
+}
+
+function IsContained(item, array, arraySize)
+{
+	var isContained = false;
+	for( j = 0 ; j < arraySize ; j++)
+	{
+		if( item == array[j] )
+			isContained = true;
+	}
+	return isContained;
+}
+
+function drawChart() {
+	// Create and populate the data table.
+	/*
+		Feed the data :
+			1. Directory Names
+			2. Directory Level
+			3. Directory Changes
+	*/
+	if(isSet == false)
+		return;
+	data = new google.visualization.DataTable();
+	data.addColumn('string', 'Region');
+	data.addColumn('string', 'Parent');
+	data.addColumn('number', 'Market trade volume (size)');
+	data.addColumn('number', 'Market increase/decrease (color)');
+/*
+Database structure
+1. IDs
+2. directoryNames[numOfDirectories]
+3. level[numOfDirectories]
+4. Parent[numOfDirectories]
+5. subdir_size[numOfDirectories]
+6. changeOverTime[numOfDirectories][numOfTimes]
+7. LevelTable
+8. LeafNodes
+*/
+	data.addRows([["Global", null,0,0]]);
+
+	for( var i = 0 ; i < LevelTable[0].length ; i++)
+	{
+		var id = LevelTable[0][i];
+		// Parents[id] can be -1 ==> It can cause an error! ==> Solution : Separate the loop.
+		if( changeOverTime[ id ][VizTime] == 1 )
+				data.addRows([ [ directoryNames[id] + id, "Global" , subdir_size[id], Variances[id] * 10] ]);
+	}
+	for( var i = 1 ; i < numOfLevels ; i++ )
+	{
+		var id = -1;
+		for( var j = 0 ; j < LevelTable[i].length ; j++ )
+		{
+			id = LevelTable[i][j];
+			var parentID = Parents[id];
+			if( changeOverTime[ id ][VizTime] == 1 )
+			{
+				data.addRows([ [ directoryNames[id] + id, directoryNames[ parentID ] + parentID , subdir_size[id], Variances[id] ]  ]);
+			}
+		}
+	}
+
+	// Create and draw the visualization.
+	var tree = new google.visualization.TreeMap(document.getElementById('visualization'));
+	tree.draw(data, {
+	minColorValue : 'auto',
+	maxColorValue : 'auto',
+	minColor: '#0d0',
+	midColor: '#ddd',
+	maxColor: '#f00',
+	headerHeight: 15,
+	fontColor: 'black',
+	showScale: true});
+}
+
+</script>
+<style type="text/css">
+textarea {
+	background-color: #000;
+	color: #FFF;
+	scrollbar-face-color: #FFF;
+}
+</style>
+</head>
+<body>
+
+
+<input type="file" id="files" name="files[]" multiple />
+<output id="list"></output>
+
+<behave_yaself:download id="currFile" style="behavior:url(#default#download);" />
+Click <a href="javascript:document.getElementById('currFile').startDownload('dataset2.txt',downloadEnd)">here</a>
+to start the download. 
+<br />When the download is finished, the text will be displayed in the <b>TEXTAREA</b> below.
+<p><textarea rows="30" cols="100" id="download"></textarea></p>
+<div id="visualization" style="width: 1100px; height: 500px;"></div>
+<script type="text/javascript" src="https://www.google.com/jsapi"></script>
+<script type="text/javascript">
+	google.load("visualization", "1", {packages:["treemap"]});
+	google.setOnLoadCallback(drawChart);
+</script>
+</body>
+</html>
